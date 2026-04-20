@@ -168,6 +168,8 @@ const Dashboard: React.FC<{
   });
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
+  const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED'>('DISCONNECTED');
+
   const filteredLongData = useMemo(() => 
     longData.filter(d => !isDensityExcluded(d.pair, d.exchange || '', d.marketType || 'SPOT')),
   [longData]);
@@ -315,14 +317,14 @@ const Dashboard: React.FC<{
   useEffect(() => {
     if (isInitializing.current) return;
 
-    const allDensities = [...longData, ...shortData];
+    const allDensities = [...filteredLongData, ...filteredShortData];
     let shouldPlay = false;
     let playVolume = 0.5;
 
     for (const d of allDensities) {
       if (!lastDensityIds.current.has(d.id)) {
         // New density detected
-        const marketType = d.market as MarketType;
+        const marketType = d.marketType as MarketType;
         const settings = marketType === 'SPOT' ? spotSettings : futuresSettings;
         if (settings.soundAlertEnabled) {
           shouldPlay = true;
@@ -628,6 +630,7 @@ const Dashboard: React.FC<{
   useEffect(() => {
     const subL = engine.longs$.subscribe(setLongData);
     const subS = engine.shorts$.subscribe(setShortData);
+    const subStatus = engine.connectionStatus$.subscribe(setConnectionStatus);
     engine.startPipeline(CONFIG.engineTickMs, (t) => t === 'SPOT' ? spotSettingsRef.current : futuresSettingsRef.current);
     
     const handleClickOutside = (event: MouseEvent) => {
@@ -646,7 +649,7 @@ const Dashboard: React.FC<{
     window.addEventListener('resize', handleResize);
 
     return () => { 
-      subL.unsubscribe(); subS.unsubscribe(); engine.stopPipeline(); engine.disconnectAll();
+      subL.unsubscribe(); subS.unsubscribe(); subStatus.unsubscribe(); engine.stopPipeline(); engine.disconnectAll();
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('resize', handleResize);
     };
@@ -734,6 +737,16 @@ const Dashboard: React.FC<{
               <div className="md:hidden">
                 <Logo size="sm" />
               </div>
+              {connectionStatus !== 'CONNECTED' && (
+                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-tighter transition-all ${
+                  connectionStatus === 'RECONNECTING' 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 animate-pulse' 
+                  : 'bg-red-500/10 border-red-500/30 text-red-500'
+                }`}>
+                  <div className={`w-1 h-1 rounded-full ${connectionStatus === 'RECONNECTING' ? 'bg-amber-500' : 'bg-red-500'}`} />
+                  {connectionStatus === 'RECONNECTING' ? (language === 'ru' ? 'Переподключение...' : 'Reconnecting...') : (language === 'ru' ? 'Отключено' : 'Disconnected')}
+                </div>
+              )}
             </div>
           </div>
           
@@ -940,120 +953,117 @@ const Dashboard: React.FC<{
       </div>
       
       <div className={`flex-1 min-h-0 overflow-hidden bg-[#050505] relative pb-16 md:pb-0 flex flex-row ${isAiBookOpen ? 'hidden md:flex' : ''}`}>
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {activeTab === 'market' ? (
-            <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 relative ${
-              isFullscreen ? 'fixed inset-0 z-[4000] bg-black' : ''
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div className={`flex-1 flex-col overflow-hidden transition-all duration-500 relative ${activeTab === 'market' ? 'flex' : 'hidden'} ${
+            isFullscreen ? 'fixed inset-0 z-[4000] bg-black' : ''
+          }`}>
+            <ChartBlock 
+              previewCoin={previewCoin}
+              language={language}
+              t={t}
+              isPortrait={isPortrait}
+              isReplayMode={isReplayMode}
+              setIsReplayMode={setIsReplayMode}
+              setIsAiBookOpen={setIsAiBookOpen}
+              setAiBookCoin={setAiBookCoin}
+              timeframe={timeframe}
+              setTimeframe={setTimeframe}
+              historyState={historyState}
+              miniChartRef={miniChartRef}
+              showExtraTf={showExtraTf}
+              setShowExtraTf={setShowExtraTf}
+              tfDropdownRef={tfDropdownRef}
+              isFavorite={isFavorite}
+              toggleFavorite={toggleFavorite}
+              isFullscreen={isFullscreen}
+              chartLayout={chartLayout}
+              comparisonCoins={comparisonCoins}
+              checkSubscription={checkSubscription}
+            />
+            <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 bg-[#0a0a0a] relative ${
+              isFullscreen ? 'h-full w-full rounded-none border-none' : ''
             }`}>
-              <ChartBlock 
+              {/* MARKET SCREENER - HANDLES CHART, CONTROLS AND ITS OWN SCROLLABLE LIST */}
+              <MemoMarketScreener 
+                language={language} 
                 previewCoin={previewCoin}
-                language={language}
-                t={t}
-                isPortrait={isPortrait}
-                isReplayMode={isReplayMode}
-                setIsReplayMode={setIsReplayMode}
-                setIsAiBookOpen={setIsAiBookOpen}
-                setAiBookCoin={setAiBookCoin}
+                setPreviewCoin={handleSetPreviewCoin}
                 timeframe={timeframe}
                 setTimeframe={setTimeframe}
-                historyState={historyState}
                 miniChartRef={miniChartRef}
-                showExtraTf={showExtraTf}
-                setShowExtraTf={setShowExtraTf}
-                tfDropdownRef={tfDropdownRef}
-                isFavorite={isFavorite}
-                toggleFavorite={toggleFavorite}
-                isFullscreen={isFullscreen}
+                favorites={favorites}
+                onToggleFavorite={toggleFavorite}
+                rankMap={rankMap}
+                onHistoryChange={setHistoryState}
+                onOpenAI={(coin) => {
+                  if (checkSubscription('API Analysis')) {
+                    setAiBookCoin(coin);
+                    setIsAiBookOpen(true);
+                  }
+                }}
+                isAiModalOpen={isAiBookOpen}
                 chartLayout={chartLayout}
+                setChartLayout={setChartLayout}
+                isReplayMode={isReplayMode}
+                setIsReplayMode={setIsReplayMode}
+                isPlaying={isPlaying}
+                setIsPlaying={setIsPlaying}
+                replaySpeed={replaySpeed}
+                setReplaySpeed={setReplaySpeed}
                 comparisonCoins={comparisonCoins}
+                setComparisonCoins={setComparisonCoins}
+                alerts={alerts}
+                setAlerts={setAlerts}
+                engine={engine}
+                isFullscreen={isFullscreen}
+                setIsFullscreen={setIsFullscreen}
+                isSettingsLoaded={isSettingsLoaded}
+                activeTool={activeTool}
+                onToolChange={setActiveTool}
+                magnetEnabled={magnetEnabled}
+                onMagnetChange={onToggleMagnet}
+                isCoinSelectorOpen={isCoinSelectorOpen}
+                setIsCoinSelectorOpen={setIsCoinSelectorOpen}
+                selectorSlotIndex={selectorSlotIndex}
+                setSelectorSlotIndex={setSelectorSlotIndex}
+                drawings={drawings}
+                onDrawingsChange={onDrawingsChange}
+                activeExchanges={activeExchanges}
+                setActiveExchanges={setActiveExchanges}
+                activeTypes={activeTypes}
+                setActiveTypes={setActiveTypes}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                sortConfig={sortConfig}
+                setSortConfig={setSortConfig}
                 checkSubscription={checkSubscription}
               />
-              <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-500 bg-[#0a0a0a] relative ${
-                isFullscreen ? 'h-full w-full rounded-none border-none' : ''
-              }`}>
-                {/* MARKET SCREENER - HANDLES CHART, CONTROLS AND ITS OWN SCROLLABLE LIST */}
-                <MemoMarketScreener 
-                  language={language} 
-                  previewCoin={previewCoin}
-                  setPreviewCoin={handleSetPreviewCoin}
-                  timeframe={timeframe}
-                  setTimeframe={setTimeframe}
-                  miniChartRef={miniChartRef}
-                  favorites={favorites}
-                  onToggleFavorite={toggleFavorite}
-                  rankMap={rankMap}
-                  onHistoryChange={setHistoryState}
-                  onOpenAI={(coin) => {
-                    if (checkSubscription('API Analysis')) {
-                      setAiBookCoin(coin);
-                      setIsAiBookOpen(true);
-                    }
-                  }}
-                  isAiModalOpen={isAiBookOpen}
-                  chartLayout={chartLayout}
-                  setChartLayout={setChartLayout}
-                  isReplayMode={isReplayMode}
-                  setIsReplayMode={setIsReplayMode}
-                  isPlaying={isPlaying}
-                  setIsPlaying={setIsPlaying}
-                  replaySpeed={replaySpeed}
-                  setReplaySpeed={setReplaySpeed}
-                  comparisonCoins={comparisonCoins}
-                  setComparisonCoins={setComparisonCoins}
-                  alerts={alerts}
-                  setAlerts={setAlerts}
-                  engine={engine}
-                  isFullscreen={isFullscreen}
-                  setIsFullscreen={setIsFullscreen}
-                  isSettingsLoaded={isSettingsLoaded}
-                  activeTool={activeTool}
-                  onToolChange={setActiveTool}
-                  magnetEnabled={magnetEnabled}
-                  onMagnetChange={onToggleMagnet}
-                  isCoinSelectorOpen={isCoinSelectorOpen}
-                  setIsCoinSelectorOpen={setIsCoinSelectorOpen}
-                  selectorSlotIndex={selectorSlotIndex}
-                  setSelectorSlotIndex={setSelectorSlotIndex}
-                  drawings={drawings}
-                  onDrawingsChange={onDrawingsChange}
-                  activeExchanges={activeExchanges}
-                  setActiveExchanges={setActiveExchanges}
-                  activeTypes={activeTypes}
-                  setActiveTypes={setActiveTypes}
-                  viewMode={viewMode}
-                  setViewMode={setViewMode}
-                  sortConfig={sortConfig}
-                  setSortConfig={setSortConfig}
-                  checkSubscription={checkSubscription}
-                />
-              </div>
             </div>
-          ) : (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* COINS BLOCK - SCROLLABLE */}
-              <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[#0a0a0a] relative custom-scroll scroll-smooth flex flex-col">
-                <MemoTable 
-                  shortData={filteredShortData} 
-                  longData={filteredLongData} 
-                  language={language} 
-                  onOpenAI={(coin) => {
-                    if (checkSubscription('API Analysis')) {
-                      setAiBookCoin(coin);
-                      setIsAiBookOpen(true);
-                    }
-                  }}
-                  spotSettings={spotSettings}
-                  futuresSettings={futuresSettings}
-                  onSettingChange={handleInputChange}
-                  onResetSettings={resetToDefault}
-                  isBlurred={isRestricted}
-                />
-              </div>
+          </div>
+
+          <div className={`flex-1 overflow-hidden transition-all duration-500 relative ${activeTab === 'screener' ? 'flex flex-col' : 'hidden'}`}>
+            <div className="flex-1 overflow-y-auto bg-[#0a0a0a] relative custom-scroll scroll-smooth flex flex-col">
+              <MemoTable 
+                shortData={filteredShortData} 
+                longData={filteredLongData} 
+                language={language} 
+                onOpenAI={(coin) => {
+                  if (checkSubscription('API Analysis')) {
+                    setAiBookCoin(coin);
+                    setIsAiBookOpen(true);
+                  }
+                }}
+                spotSettings={spotSettings}
+                futuresSettings={futuresSettings}
+                onSettingChange={handleInputChange}
+                onResetSettings={resetToDefault}
+                isBlurred={isRestricted}
+              />
             </div>
-          )}
+          </div>
         </div>
 
-        {activeTab === 'market' && (
+        <div className={activeTab === 'market' ? 'flex' : 'hidden'}>
           <MarketSidebar 
             language={language} 
             chartLayout={chartLayout}
@@ -1066,11 +1076,9 @@ const Dashboard: React.FC<{
             setIsOpen={setIsSidebarOpen}
             onSelectCoin={(coin) => {
               setComparisonCoins(prev => {
-                // Check if already in list
                 const exists = prev.some(c => c.symbol === coin.symbol && c.exchange === coin.exchange && c.market === coin.market);
                 if (exists) return prev;
-                
-                const newList = [...prev, coin].slice(0, 3); // Max 3 comparison coins (total 4 charts)
+                const newList = [...prev, coin].slice(0, 3);
                 setChartLayout(newList.length + 1);
                 return newList;
               });
@@ -1078,14 +1086,10 @@ const Dashboard: React.FC<{
             comparisonCoins={comparisonCoins}
             replayState={{ isReplayMode, isPlaying, replaySpeed }}
             onToggleReplayMode={() => {
-              if (checkSubscription('Simulator')) {
-                setIsReplayMode(!isReplayMode);
-              }
+              if (checkSubscription('Simulator')) setIsReplayMode(!isReplayMode);
             }}
             onTogglePlayPause={() => {
-              if (checkSubscription('Simulator')) {
-                setIsPlaying(!isPlaying);
-              }
+              if (checkSubscription('Simulator')) setIsPlaying(!isPlaying);
             }}
             onSetReplaySpeed={setReplaySpeed}
             activeTool={activeTool}
@@ -1103,7 +1107,7 @@ const Dashboard: React.FC<{
             }}
             checkSubscription={checkSubscription}
           />
-        )}
+        </div>
       </div>
 
       {isAiBookOpen && aiBookCoin && (

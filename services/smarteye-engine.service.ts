@@ -35,6 +35,7 @@ export class SmarteyeEngineService {
   public longs$ = new BehaviorSubject<RowData[]>([]);
   public shorts$ = new BehaviorSubject<RowData[]>([]);
   public socketCount$ = new BehaviorSubject<number>(0);
+  public connectionStatus$ = new BehaviorSubject<'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED'>('DISCONNECTED');
   public error$ = new Subject<{ exchange: string, marketType: string, message: string, isRegionalBlock: boolean }>();
 
   private marketState: Record<string, SymbolState> = {};
@@ -48,6 +49,8 @@ export class SmarteyeEngineService {
   private tickerConfigs: { symbol: string, exchange: string, marketType: MarketType }[] = [];
   private tickCounter = 0;
   private lastDeepCleanup = Date.now();
+  private isReconnecting = false;
+  private reconnectTimer: any = null;
 
   public ticker$ = new Subject<{ symbol: string, price: number, exchange: string, marketType: MarketType }>();
 
@@ -105,7 +108,13 @@ export class SmarteyeEngineService {
       this.proxySocket.onclose = null;
       this.proxySocket.onerror = null;
       this.proxySocket.onmessage = null;
-      this.proxySocket.close();
+      try { this.proxySocket.close(); } catch (e) {}
+      this.proxySocket = null;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
 
     // Use configurable proxy URL if provided, otherwise fallback to current host
@@ -121,12 +130,15 @@ export class SmarteyeEngineService {
     }
 
     try {
+      this.isReconnecting = true;
       const ws = new WebSocket(wsUrl);
       this.proxySocket = ws;
 
       ws.onopen = () => {
         console.log("[Engine] Connected to Backend Proxy");
+        this.isReconnecting = false;
         this.socketCount$.next(1);
+        this.connectionStatus$.next('CONNECTED');
         ws.send(JSON.stringify({
           type: "CONNECT_EXCHANGES",
           configs: this.activeConfigs,
@@ -135,28 +147,28 @@ export class SmarteyeEngineService {
       };
 
       ws.onclose = () => {
-        console.warn("[Engine] Proxy connection closed. Reloading page...");
-        window.location.reload();
+        console.warn("[Engine] Proxy connection closed. Attempting reconnect...");
+        this.handleReconnect();
       };
 
       ws.onerror = (err) => {
         console.error("[Engine] Proxy connection error:", err);
-        window.location.reload();
+        this.handleReconnect();
       };
 
-      // Watchdog: If no message (market data or heartbeat) for 6s, reload
+      // Watchdog: If no message (market data or heartbeat) for 10s, reconnect
       this.lastMsgTime = Date.now();
       this.watchdogInterval = setInterval(() => {
         const timeSinceLastMsg = Date.now() - this.lastMsgTime;
-        if (timeSinceLastMsg > 6000) {
-          console.warn(`[Engine] Connection stall detected (${timeSinceLastMsg}ms). Force reloading...`);
-          window.location.reload();
+        if (timeSinceLastMsg > 10000) {
+          console.warn(`[Engine] Connection stall detected (${timeSinceLastMsg}ms). Reconnecting...`);
+          this.handleReconnect();
         }
-      }, 2000);
+      }, 3000);
 
       this.offlineHandler = () => {
-        console.warn("[Engine] Network offline. Force reloading...");
-        window.location.reload();
+        console.warn("[Engine] Network offline. Moving to disconnected state.");
+        this.handleReconnect();
       };
       window.addEventListener('offline', this.offlineHandler);
 
@@ -173,8 +185,8 @@ export class SmarteyeEngineService {
 
           if (payload.type === "EXCHANGE_ERROR") {
             if (payload.isDisconnected && !payload.isRegionalBlock) {
-              console.warn("[Engine] Exchange disconnected. Force reloading...");
-              window.location.reload();
+              console.warn("[Engine] Exchange disconnected. Reconnecting proxy...");
+              this.handleReconnect();
               return;
             }
             this.error$.next({
@@ -248,8 +260,18 @@ export class SmarteyeEngineService {
       };
     } catch (e) {
       console.error("[Engine] Failed to create proxy socket:", e);
-      window.location.reload();
+      this.handleReconnect();
     }
+  }
+
+  private handleReconnect() {
+    this.stopWatchdog();
+    this.isReconnecting = true;
+    this.socketCount$.next(0);
+    this.connectionStatus$.next('RECONNECTING');
+    
+    console.warn("[Engine] Connection lost. Mandatory page reload...");
+    window.location.reload();
   }
 
   private stopWatchdog() {
