@@ -287,20 +287,24 @@ const SortButton: React.FC<{
       e.stopPropagation();
       onSelect(mode);
     }}
-    className={`relative flex items-center gap-2 px-4 py-2 rounded-xl group pointer-events-auto cursor-pointer transition-all border ${
+    className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full group pointer-events-auto cursor-pointer transition-all border ${
       currentMode === mode 
-      ? 'bg-black/40 border-purple-500/50 shadow-[0_0_20px_rgba(168,85,247,0.15)]' 
-      : 'bg-black/20 border-white/5 hover:border-purple-500/30'
+      ? 'bg-[#0d0d0d] border-zinc-500 shadow-[0_0_20px_rgba(255,255,255,0.05)]' 
+      : 'bg-[#0d0d0d] border-zinc-800/80 hover:border-zinc-700'
     }`}
   >
-    <Icon size={12} className={currentMode === mode ? 'text-purple-500' : 'text-gray-500 group-hover:text-gray-300'} />
-    <span className={`text-[10px] font-black uppercase tracking-widest ${
-      currentMode === mode ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'
+    <Icon 
+      size={14} 
+      className={`transition-colors ${currentMode === mode ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-500'}`} 
+    />
+    <span className={`text-[11px] font-black uppercase tracking-[0.15em] transition-colors ${
+      currentMode === mode ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-300'
     }`}>
       {label}
     </span>
+    
     {currentMode === mode && (
-      <div className="absolute -bottom-[1px] left-1/2 -translate-x-1/2 w-1/2 h-[2px] bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.8)] rounded-full" />
+      <div className="absolute -bottom-[1px] left-1/2 -translate-x-1/2 w-[60%] h-[3px] bg-white rounded-full shadow-[0_0_12px_rgba(255,255,255,0.4)]" />
     )}
   </button>
 );
@@ -427,9 +431,9 @@ const Table: React.FC<{
     <div className="w-full flex flex-col bg-[#0a0a0a] relative">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-[#0a0a0a] backdrop-blur-xl shrink-0 z-[40] pointer-events-auto">
         <div className="flex items-center gap-2">
-          <SortButton mode="volume" currentMode={sortMode} icon={BarChart3} label={t.volume} onSelect={setSortMode} />
-          <SortButton mode="distance" currentMode={sortMode} icon={Navigation} label={t.distance} onSelect={setSortMode} />
-          <SortButton mode="alphabet" currentMode={sortMode} icon={Type} label={t.asset} onSelect={setSortMode} />
+          <SortButton mode="volume" currentMode={sortMode} icon={BarChart3} label="Объем" onSelect={setSortMode} />
+          <SortButton mode="distance" currentMode={sortMode} icon={Navigation} label="ДИСТ." onSelect={setSortMode} />
+          <SortButton mode="alphabet" currentMode={sortMode} icon={Type} label="Актив." onSelect={setSortMode} />
         </div>
         
         <div className="flex items-center gap-3">
@@ -609,11 +613,13 @@ const Table: React.FC<{
           ))}
           {sortedData.length === 0 && (
             <div className="col-span-full h-[500px] flex flex-col items-center justify-center -mt-32 text-zinc-500/30 font-black text-[18px] sm:text-[24px] md:text-[32px] lg:text-[48px] text-center max-w-6xl mx-auto gap-8 lg:gap-12 px-6 lg:px-10">
-               <div className="leading-[1.2] uppercase [word-spacing:0.3em] lg:[word-spacing:0.5em] tracking-tight relative whitespace-pre-line">
-                 {t.searching_anomalies}
-                 <BellRing className="inline-block ml-3 lg:ml-6 text-white -mt-1 lg:-mt-2 align-middle w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 lg:w-10 lg:h-10 shadow-[0_0_20px_rgba(255,255,255,0.3)]" />
-               </div>
-               <div className="w-10 h-10 lg:w-12 lg:h-12 border-2 border-white/5 border-t-purple-500/50 rounded-full animate-spin"></div>
+                <div className="leading-[1.2] uppercase [word-spacing:0.3em] lg:[word-spacing:0.5em] tracking-tight relative whitespace-pre-line">
+                  {t.searching_anomalies}
+                  <div className="inline-flex items-center justify-center p-1.5 sm:p-2 rounded-xl bg-transparent ml-3 lg:ml-6 -mt-1 lg:-mt-2 align-middle border-none">
+                    <BellRing className="text-white/20 w-5 h-5 sm:w-7 sm:h-7 md:w-8 md:h-8 lg:w-10 lg:h-10 animate-pulse" />
+                  </div>
+                </div>
+                <div className="w-10 h-10 lg:w-12 lg:h-12 border-2 border-white/5 border-t-purple-500/50 rounded-full animate-spin"></div>
             </div>
           )}
         </div>

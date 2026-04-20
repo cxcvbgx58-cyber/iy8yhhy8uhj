@@ -1190,20 +1190,37 @@ async function startServer() {
   });
 
   // Periodically fetch rank mapping to keep the engine ratings accurate
+  let rankMap: Record<string, number> = {
+    'BTC': 1, 'ETH': 2, 'SOL': 3, 'BNB': 4, 'XRP': 5, 'ADA': 6, 'DOGE': 7, 'TRX': 8, 'TON': 9, 'LINK': 10,
+    'AVAX': 11, 'SHIB': 12, 'BCH': 13, 'DOT': 14, 'NEAR': 15, 'MATIC': 16, 'LTC': 17, 'PEPE': 18, 'ICP': 19, 'KAS': 20,
+    'STX': 21, 'UNI': 22, 'RENDER': 23, 'APT': 24, 'RNDR': 23, 'ARB': 25, 'OP': 26, 'SUI': 27, 'FIL': 28, 'ETC': 29, 'HBAR': 30,
+    'KASPA': 20, 'FET': 31, 'TIA': 32, 'INJ': 33, 'TAO': 34, 'LDO': 35, 'RUNE': 36, 'JUP': 37, 'BGB': 38, 'MNT': 39, 'PYTH': 40
+  };
+
   const fetchRanks = async () => {
     try {
       const response = await axios.get('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false');
       if (response.status === 200) {
         const data = response.data;
-        // In the future we might want to pass this to a setRankMap method on serverEngine
-        // For now, it primarily helps with UI sorting/filtering if we had that on server.
+        const mapping: Record<string, number> = {};
+        data.forEach((coin: any) => {
+          mapping[coin.symbol.toUpperCase()] = coin.market_cap_rank;
+        });
+        rankMap = { ...rankMap, ...mapping };
+        console.log('[Server Engine] Rank mapping updated successfully');
       }
     } catch (error: any) {
-      console.error('[Server Engine] Error fetching ranks:', error.message);
+      console.error('[Server Engine] Error fetching ranks from CoinGecko:', error.message);
+      // Fallback is already initialized
     }
   };
   fetchRanks();
   setInterval(fetchRanks, 60 * 60 * 1000); // Once per hour
+
+  // API Route for ranks
+  app.get("/api/ranks", (req, res) => {
+    res.json(rankMap);
+  });
 
   const BINANCE_SPOT_ALTS = [
     'wss://stream.binance.com:9443/ws',

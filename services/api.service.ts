@@ -176,6 +176,11 @@ class ApiService {
     return this.request<{ status: string }>('/db/status');
   }
 
+  // Ranks
+  public async getRanks(): Promise<Record<string, number>> {
+    return this.request<Record<string, number>>('/ranks');
+  }
+
   // Partner
   public async getPremiumHistory(userId: string): Promise<any[]> {
     return this.request<any[]>(`/partner/premium-history/${userId}`);

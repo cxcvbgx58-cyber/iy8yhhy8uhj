@@ -356,7 +356,7 @@ export interface MarketScreenerProps {
   selectorSlotIndex: number | null;
   setSelectorSlotIndex: React.Dispatch<React.SetStateAction<number | null>>;
   drawings: Record<string, any[]>;
-  onDrawingsChange: (symbol: string, drawings: any[]) => void;
+  onDrawingsChange: (key: string, drawings: any[]) => void;
   activeExchanges: Record<string, boolean>;
   setActiveExchanges: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   activeTypes: Record<string, boolean>;
@@ -426,6 +426,11 @@ const MarketScreener: React.FC<MarketScreenerProps> = ({
   setSortConfig,
   checkSubscription
 }) => {
+  const getDrawingKey = (coin: MarketCoin | null) => {
+    if (!coin) return '';
+    return `${coin.exchange}:${coin.market}:${coin.symbol}`;
+  };
+  
   const t = translations[language];
   const [data, setData] = useState<MarketCoin[]>([]);
   const [positions, setPositions] = useState<any[]>([]);
@@ -1171,8 +1176,8 @@ const MarketScreener: React.FC<MarketScreenerProps> = ({
                     onToolChange={onToolChange}
                     magnetEnabled={magnetEnabled}
                     onMagnetChange={onMagnetChange}
-                    drawings={previewCoin ? (drawings[previewCoin.symbol] || []) : []}
-                    onDrawingsChange={(newDrawings) => previewCoin && onDrawingsChange(previewCoin.symbol, newDrawings)}
+                    drawings={previewCoin ? (drawings[getDrawingKey(previewCoin)] || []) : []}
+                    onDrawingsChange={(newDrawings) => previewCoin && onDrawingsChange(getDrawingKey(previewCoin), newDrawings)}
                   />
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center opacity-10">
@@ -1210,6 +1215,8 @@ const MarketScreener: React.FC<MarketScreenerProps> = ({
                           onToolChange={onToolChange}
                           magnetEnabled={magnetEnabled}
                           onMagnetChange={onMagnetChange}
+                          drawings={drawings[getDrawingKey(coin)] || []}
+                          onDrawingsChange={(newDrawings) => onDrawingsChange(getDrawingKey(coin), newDrawings)}
                         />
                         <button 
                           onClick={() => {

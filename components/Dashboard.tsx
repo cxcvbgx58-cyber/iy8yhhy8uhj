@@ -25,6 +25,17 @@ import { LanguageSwitcher } from '../src/components/UI/LanguageSwitcher';
 
 import confetti from 'canvas-confetti';
 
+const DEFAULT_COIN: MarketCoin = {
+  symbol: 'BTCUSDT',
+  baseAsset: 'BTC',
+  price: 0,
+  change24h: 0,
+  volume24h: 0,
+  market: 'FUTURES',
+  exchange: 'Binance',
+  logo: '/api/logos/BTC'
+};
+
 const isDensityExcluded = (symbol: string, exchange: string, marketType: string) => {
   const baseAsset = symbol.replace('USDT', '');
   const isBinance = exchange.includes('Binance');
@@ -49,6 +60,11 @@ const isDensityExcluded = (symbol: string, exchange: string, marketType: string)
   }
   
   return false;
+};
+
+const getDrawingKey = (coin: MarketCoin | null) => {
+  if (!coin) return '';
+  return `${coin.exchange}:${coin.market}:${coin.symbol}`;
 };
 
 const Dashboard: React.FC<{ 
@@ -87,11 +103,15 @@ const Dashboard: React.FC<{
       const saved = localStorage.getItem('smarteye_activeCoin');
       if (saved) {
         try {
-          return JSON.parse(saved);
-        } catch (e) { return null; }
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.baseAsset === 'BTC' && (parsed.market === 'SPOT' || parsed.exchange === 'Bybit')) {
+            return DEFAULT_COIN;
+          }
+          return parsed;
+        } catch (e) { return DEFAULT_COIN; }
       }
     }
-    return null;
+    return DEFAULT_COIN;
   });
   const [timeframe, setTimeframe] = useState(() => {
     if (typeof localStorage !== 'undefined') {
@@ -109,6 +129,18 @@ const Dashboard: React.FC<{
   const [showExtraTf, setShowExtraTf] = useState(false);
   const [priceFlash, setPriceFlash] = useState(false);
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
+
+  const [spotSettings, setSpotSettings] = useState<SettingsState>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_PREFIX + 'spot') : null;
+    const parsed = saved ? JSON.parse(saved) : {};
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  });
+  const [futuresSettings, setFuturesSettings] = useState<SettingsState>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_PREFIX + 'futures') : null;
+    const parsed = saved ? JSON.parse(saved) : {};
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  });
+
   const [chartLayout, setChartLayout] = useState(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem('smarteye_chartLayout');
@@ -135,7 +167,11 @@ const Dashboard: React.FC<{
   const [drawings, setDrawings] = useState<Record<string, any[]>>(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem('smarteye_drawings');
-      return saved ? JSON.parse(saved) : {};
+      const parsed = saved ? JSON.parse(saved) : {};
+      
+      // Migration: check if any keys are just symbols and update them if it's the current preview coin
+      // However, it's safer to just start using the new key.
+      return parsed;
     }
     return {};
   });
@@ -171,12 +207,52 @@ const Dashboard: React.FC<{
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED'>('DISCONNECTED');
 
   const filteredLongData = useMemo(() => 
-    longData.filter(d => !isDensityExcluded(d.pair, d.exchange || '', d.marketType || 'SPOT')),
-  [longData]);
+    longData.filter(d => {
+      const isExcluded = isDensityExcluded(d.pair, d.exchange || '', d.marketType || 'SPOT');
+      if (isExcluded) return false;
+      
+      // Apply UI-side filtering based on settings
+      const settings = d.marketType === 'SPOT' ? spotSettings : futuresSettings;
+      
+      const currentVol = Number(d.rawVolume || 0);
+      const minDensityVol = Number(settings.minDensityVolume) || 40000;
+      if (currentVol < minDensityVol) return false;
+      
+      const distPct = Math.abs(Number(d.percentage) || 0);
+      const maxDistPct = Number(settings.distancePercentage) || 2.0;
+      if (distPct > maxDistPct) return false;
+
+      const relDensity = Number(d.relDensity || 0);
+      const minRelDensity = Number(settings.peerMultiplier) || 2.5;
+      if (relDensity < minRelDensity) return false;
+      
+      return true;
+    }),
+  [longData, spotSettings, futuresSettings]);
 
   const filteredShortData = useMemo(() => 
-    shortData.filter(d => !isDensityExcluded(d.pair, d.exchange || '', d.marketType || 'SPOT')),
-  [shortData]);
+    shortData.filter(d => {
+      const isExcluded = isDensityExcluded(d.pair, d.exchange || '', d.marketType || 'SPOT');
+      if (isExcluded) return false;
+      
+      // Apply UI-side filtering based on settings
+      const settings = d.marketType === 'SPOT' ? spotSettings : futuresSettings;
+      
+      const currentVol = Number(d.rawVolume || 0);
+      const minDensityVol = Number(settings.minDensityVolume) || 40000;
+      if (currentVol < minDensityVol) return false;
+      
+      const distPct = Math.abs(Number(d.percentage) || 0);
+      const maxDistPct = Number(settings.distancePercentage) || 2.0;
+      if (distPct > maxDistPct) return false;
+
+      const relDensity = Number(d.relDensity || 0);
+      const minRelDensity = Number(settings.peerMultiplier) || 2.5;
+      if (relDensity < minRelDensity) return false;
+      
+      return true;
+    }),
+  [shortData, spotSettings, futuresSettings]);
 
   const [selectedExchanges, setSelectedExchanges] = useState<ExchangeSelection>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -284,17 +360,6 @@ const Dashboard: React.FC<{
     return true;
   };
 
-  const [spotSettings, setSpotSettings] = useState<SettingsState>(() => {
-    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_PREFIX + 'spot') : null;
-    const parsed = saved ? JSON.parse(saved) : {};
-    return { ...DEFAULT_SETTINGS, ...parsed };
-  });
-  const [futuresSettings, setFuturesSettings] = useState<SettingsState>(() => {
-    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_PREFIX + 'futures') : null;
-    const parsed = saved ? JSON.parse(saved) : {};
-    return { ...DEFAULT_SETTINGS, ...parsed };
-  });
-
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastDensityIds = useRef<Set<string>>(new Set());
 
@@ -388,11 +453,16 @@ const Dashboard: React.FC<{
         if (settings.futuresSettings) setFuturesSettings({ ...DEFAULT_SETTINGS, ...settings.futuresSettings });
         
         if (settings.activeCoin) {
-          setPreviewCoin(settings.activeCoin);
+          // Force BTC to Futures Binance if it's currently Spot or Bybit during initialization
+          let coinToSet = settings.activeCoin;
+          if (coinToSet.baseAsset === 'BTC' && (coinToSet.market === 'SPOT' || coinToSet.exchange === 'Bybit')) {
+            coinToSet = DEFAULT_COIN;
+          }
+          setPreviewCoin(coinToSet);
         } else {
-          // If no active coin in DB (new user), clear preview coin so screener picks the top one
-          setPreviewCoin(null);
-          localStorage.removeItem('smarteye_activeCoin');
+          // If no active coin in DB (new user), set to BTC Futures
+          setPreviewCoin(DEFAULT_COIN);
+          localStorage.setItem('smarteye_activeCoin', JSON.stringify(DEFAULT_COIN));
         }
 
         if (settings.timeframe) setTimeframe(settings.timeframe);
@@ -407,8 +477,8 @@ const Dashboard: React.FC<{
         if (settings.selectedExchanges) setSelectedExchanges(settings.selectedExchanges);
       } else {
         // No settings at all (fresh registration)
-        setPreviewCoin(null);
-        localStorage.removeItem('smarteye_activeCoin');
+        setPreviewCoin(DEFAULT_COIN);
+        localStorage.setItem('smarteye_activeCoin', JSON.stringify(DEFAULT_COIN));
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -472,9 +542,9 @@ const Dashboard: React.FC<{
     }
   }, [activeExchanges, activeTypes, viewMode, sortConfig, comparisonCoins, chartLayout, selectedExchanges, dbUser, isSettingsLoaded]);
 
-  const onDrawingsChange = (symbol: string, symbolDrawings: any[]) => {
+  const onDrawingsChange = (key: string, symbolDrawings: any[]) => {
     setDrawings(prev => {
-      const next = { ...prev, [symbol]: symbolDrawings };
+      const next = { ...prev, [key]: symbolDrawings };
       if (dbUser) {
         saveCurrentSettings({ drawings: next });
       } else {
@@ -610,21 +680,19 @@ const Dashboard: React.FC<{
   useEffect(() => {
     const fetchRanks = async () => {
       try {
-        const response = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false');
-        if (response.ok) {
-          const data = await response.json();
-          const mapping: Record<string, number> = {};
-          data.forEach((coin: any) => {
-            mapping[coin.symbol.toUpperCase()] = coin.market_cap_rank;
-          });
+        const mapping = await apiService.getRanks();
+        if (mapping && Object.keys(mapping).length > 0) {
           setRankMap(mapping);
           engine.setRankMap(mapping);
         }
       } catch (error) {
-        console.error('Error fetching ranks:', error);
+        console.error('Error fetching ranks from backend:', error);
       }
     };
     fetchRanks();
+    // Refresh ranks every hour
+    const interval = setInterval(fetchRanks, 60 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [engine]);
 
   useEffect(() => {
